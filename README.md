@@ -184,3 +184,4 @@ Please feel free to submit pull requests through GitHub or get in touch with us 
 you have any questions. Bug reports are also welcomed (though do try to be specific).
 
 ---------------
+This is a fork for personal use only. Be carefull No guarantee of it working.
