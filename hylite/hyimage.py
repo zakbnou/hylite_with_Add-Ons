@@ -17,6 +17,7 @@ from hylite.hydata import HyData
 from hylite.hylibrary import HyLibrary
 
 
+
 class HyImage( HyData ):
     """
     A class for hyperspectral image data. These can be individual scenes or hyperspectral orthoimages.
@@ -41,8 +42,10 @@ class HyImage( HyData ):
         # special case - if dataset only has oneband, slice it so it still has
         # the format data[x,y,b].
         if not self.data is None:
+            if len(self.data.shape) == 1:
+                self.data = self.data[None, None, :] # single pixel image
             if len(self.data.shape) == 2:
-                self.data = self.data[:, :, np.newaxis]
+                self.data = self.data[:, :, None] # single band iamge
 
         #load any additional project information (specific to images)
         self.set_projection(kwds.get("projection",None))
@@ -65,6 +68,12 @@ class HyImage( HyData ):
             return HyImage(None, header=self.header.copy(), projection=self.projection, affine=self.affine)
         else:
             return HyImage( self.data.copy(), header=self.header.copy(), projection=self.projection, affine=self.affine)
+
+    def T(self):
+        """
+        Return a transposed view of the data matrix (corresponding with the [y,x] indexing used by matplotlib, opencv etc.
+        """
+        return np.transpose(self.data, (1,0,2))
 
     def xdim(self):
         """
@@ -507,7 +516,7 @@ class HyImage( HyData ):
 
         Args:
             band (str,int,float,tuple): the band name (string), index (integer) or wavelength (float) to plot. Default is 0. If a tuple is passed then
-                  each band in the tuple (string or index) will be mapped to rgb.
+                  each band in the tuple (string or index) will be mapped to rgb. Bands with negative wavelengths or indices will be inverted before plotting.
             ax: an axis object to plot to. If none, plt.imshow( ... ) is used.
             bfac (float): a brightness adjustment to apply to RGB mappings (-1 to 1)
             cfac (float): a contrast adjustment to apply to RGB mappings (-1 to 1)
@@ -546,7 +555,20 @@ class HyImage( HyData ):
         #map individual band using colourmap
         if isinstance(band, str) or isinstance(band, int) or isinstance(band, float):
             #get band
-            data = self.data[:, :, self.get_band_index(band)]
+            if isinstance(band, str):
+                data = self.data[:, :, self.get_band_index(band)]
+            else:
+                data = self.data[:, :, self.get_band_index(np.abs(band))]
+            if not isinstance(band, str) and band < 0:
+                data = np.nanmax(data) - data # flip
+
+            # convert integer vmin and vmax values to percentiles
+            if 'vmin' in kwds:
+                if isinstance(kwds['vmin'], int):
+                    kwds['vmin'] = np.nanpercentile( data, kwds['vmin'] )
+            if 'vmax' in kwds:
+                if isinstance(kwds['vmax'], int):
+                    kwds['vmax'] = np.nanpercentile( data, kwds['vmax'] )
 
             #mask nans (and apply custom mask)
             mask = np.isnan(data)
@@ -557,14 +579,6 @@ class HyImage( HyData ):
                 del kwds['mask']
             data = np.ma.array(data, mask = mask > 0 )
 
-            # convert integer vmin and vmax values to percentiles
-            if 'vmin' in kwds:
-                if isinstance(kwds['vmin'], int):
-                    kwds['vmin'] = np.nanpercentile( data, kwds['vmin'] )
-            if 'vmax' in kwds:
-                if isinstance(kwds['vmax'], int):
-                    kwds['vmax'] = np.nanpercentile( data, kwds['vmax'] )
-
             # apply rotations and flipping
             if rot:
                 data = data.T
@@ -573,20 +587,36 @@ class HyImage( HyData ):
             if flipY:
                 data = data[:, ::-1]
 
-            ax.cbar = ax.imshow(data.T, interpolation=kwds.pop('interpolation', 'none'), **kwds)
+            # save?
+            if 'path' in kwds:
+                path = kwds.pop('path')
+                from matplotlib.pyplot import imsave
+                if not os.path.exists(os.path.dirname(path)):
+                    os.makedirs(os.path.dirname(path)) # ensure output directory exists
+                imsave(path, data.T, **kwds)  # save the image
+
+            ax.cbar = ax.imshow(data.T, interpolation=kwds.pop('interpolation', 'none'), **kwds) # change default interpolation to None
 
         #map 3 bands to RGB
         elif isinstance(band, tuple) or isinstance(band, list):
             #get band indices and range
             rgb = []
             for b in band:
-                rgb.append( self.get_band_index( b ) )
+                if isinstance(b, str):
+                    rgb.append(self.get_band_index(b))
+                else:
+                    rgb.append(self.get_band_index(np.abs(b)))
 
             #slice image (as copy) and map to 0 - 1
             img = np.array(self.data[:, :, rgb]).copy()
             if np.isnan(img).all():
                 print("Warning - image contains no data.")
                 return ax.get_figure(), ax
+
+            # invert if needed
+            for i,b in enumerate(band):
+                if not isinstance(b, str) and (b < 0):
+                    img[..., i] = np.nanmax(img[..., i]) - img[..., i]
 
             # do scaling
             if tscale: # scale bands independently

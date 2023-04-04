@@ -83,8 +83,9 @@ def loadHeader(path):
     try:
         hdrfile = open(path, "r")
     except:
-        print("Could not open hdr file %s" % str(path))
-        return
+        if path is not None: # no header file exists. This is not necessarily an issue.
+            print("Could not open hdr file %s" % str(path))
+        return None
 
     # Read line, split it on equals, strip whitespace from resulting strings and add key/value pair to output
     currentline = hdrfile.readline()
@@ -94,7 +95,8 @@ def loadHeader(path):
             # Split line on first equals sign
             if (re.search("=", currentline) is not None):
                 linesplit = re.split("=", currentline, 1)
-                key = str.lower(linesplit[0].strip())
+                # key = str.lower(linesplit[0].strip())
+                key = linesplit[0].strip()
                 value = linesplit[1].strip()
 
                 # If value starts with an open brace, it's the start of a block - strip the brace off and read the rest of the block
@@ -121,6 +123,9 @@ def loadHeader(path):
 
     #convert default things like wavelength data to numeric form
     #N.B. wavelength should ALWAYS be stored as nanometres
+    if 'Wavelength' in header: # drop upper case wavelength for some files
+        header['wavelength'] = header['Wavelength']
+        del header['Wavelength']
     if "wavelength" in header:
         units = header.get("wavelength units", "nm").lower()
         if "nm" in units or "nano" in units: #units in nanometers
@@ -194,7 +199,9 @@ def matchHeader(path):
 
                 image = m  # store matching image file
                 break
-
+            elif (os.path.splitext(m)[0] == path) and (image is None):
+                image = m # .png files can be valid, but should be lower priority, so store but continue looking
+                          # in case there is e.g., a .dat file also.
     # we have an image file, find associated header file
     else:
         image = path + ext

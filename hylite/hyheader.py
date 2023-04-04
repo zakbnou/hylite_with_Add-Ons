@@ -26,7 +26,7 @@ class HyHeader( dict ):
         """
         Return true if wavelengths are defined.
         """
-        return 'wavelength' in self
+        return ('wavelength' in self)
 
     def has_fwhm(self):
         """
@@ -65,8 +65,11 @@ class HyHeader( dict ):
         """
         Get list of band wavelengths from header file.
         """
-        assert 'wavelength' in self, "Error - header file has no wavelength information."
-        return self['wavelength'].copy()
+        if 'wavelength' in self:
+            return self['wavelength'].copy()
+        else:
+            assert False, "Error - header file has no wavelength information."
+
 
     def get_bbl(self):
         """
